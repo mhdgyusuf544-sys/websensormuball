@@ -346,7 +346,7 @@ async function connectArduino(){
       const { value, done } = await serialReader.read();
       if (done) break;
       serialBuffer += value;
-      const lines = serialBuffer.split(/\\r?\\n/);
+      const lines = serialBuffer.split(/\r?\n/);
       serialBuffer = lines.pop() || '';
 
       for (const line of lines) {
