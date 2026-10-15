@@ -58,9 +58,27 @@ const resetDispenseBtn = document.getElementById('resetDispense');
 const historyTableBody = document.querySelector('#historyTable tbody');
 
 // Chart.js setup
-const ctx = document.getElementById('turbidityChart').getContext('2d');
+const chartCanvas = document.getElementById('turbidityChart');
+const ctx = chartCanvas ? chartCanvas.getContext('2d') : null;
 const chartData = {labels:[],datasets:[{label:'Turbidity (NTU)',data:[],borderColor:'rgba(46,139,87,0.9)',backgroundColor:'rgba(46,139,87,0.15)',tension:0.25}]};
-const turbidityChart = new Chart(ctx,{type:'line',data:chartData,options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Time'}},y:{title:{display:true,text:'NTU'}}}}});
+const chartOptions = {responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Time'}},y:{title:{display:true,text:'NTU'}}}};
+let turbidityChart;
+if (typeof Chart !== 'undefined' && ctx) {
+  turbidityChart = new Chart(ctx,{type:'line',data:chartData,options:chartOptions});
+} else {
+  console.warn('Chart.js tidak termuat; dashboard berjalan tanpa grafik.');
+  const chartCard = document.querySelector('.chart-card');
+  if (chartCard) {
+    const notice = document.createElement('p');
+    notice.className = 'chart-warning';
+    notice.textContent = 'Grafik tidak tersedia. Periksa koneksi internet, lalu muat ulang halaman.';
+    chartCard.appendChild(notice);
+  }
+  turbidityChart = {
+    options:{scales:{x:{title:{text:'Time'}},y:{title:{text:'NTU'}}}},
+    update:function(){}
+  };
+}
 
 // History storage
 function loadHistory(){
