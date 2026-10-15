@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Water Monitor — Dashboard Kualitas Air</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>Water Quality Monitor</h1>
+      <p class="subtitle">Pemantauan kekeruhan air dan distribusi EM Mudball secara real-time</p>
+    </div>
+    <div class="header-right">
+      <button id="demoToggle" class="btn">DEMO MODE</button>
+      <div id="espStatus" class="status disconnected">● ESP32 DISCONNECTED</div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="top-cards">
+      <div class="card" id="card-turbidity">
+        <h3>KEKERUHAN AIR</h3>
+        <div class="big-value"><span id="turbidityValue">--</span> <small>NTU</small></div>
+        <div class="meta">ADC: <span id="adcValue">--</span></div>
+        <div class="meta">Tegangan: <span id="voltageValue">--</span> V</div>
+        <div class="meta">Pembaruan: <span id="updateTime">--</span></div>
+      </div>
+
+      <div class="card" id="card-water-status">
+        <h3>KONDISI AIR</h3>
+        <div id="waterStatusIndicators">
+          <div class="status-indicator" data-status="JERNIH"><span class="dot" id="statusDot"></span> <span id="statusText">--</span></div>
+        </div>
+        <div class="config-note">Batas indikator dapat diatur melalui <code>script.js</code></div>
+      </div>
+
+      <div class="card" id="card-voltage">
+        <h3>TEGANGAN SENSOR</h3>
+        <div class="big-value"><span id="voltageBig">--</span> <small>V</small></div>
+      </div>
+    </section>
+
+    <section class="chart-card card">
+      <h3>Tren Kekeruhan</h3>
+      <canvas id="turbidityChart"></canvas>
+    </section>
+
+    <section class="calc-dispense">
+      <div class="card" id="card-calc">
+        <h3>HITUNG KEBUTUHAN EM MUDBALL</h3>
+        <label>Luas Area Pengolahan (m²)</label>
+        <input id="areaInput" type="number" min="0" placeholder="10">
+        <div class="calc-result">Jumlah EM Mudball: <strong id="mudballTarget">0</strong> buah</div>
+        <div id="areaError" class="error"></div>
+      </div>
+
+      <div class="card" id="card-dispenser">
+        <h3>DISPENSER MUDBALL</h3>
+        <div class="disp-row">Target mudball <strong><span id="dispTarget">0</span> buah</strong></div>
+        <div class="disp-row">Sudah dikeluarkan <strong><span id="dispReleased">0</span> buah</strong></div>
+        <div class="disp-row">Sisa <strong><span id="dispRemaining">0</span> buah</strong></div>
+        <div class="disp-row">Progres <strong id="dispProgress">0%</strong></div>
+
+        <div class="disp-controls">
+          <button id="startDispense" class="btn primary">MULAI</button>
+          <button id="stopDispense" class="btn">JEDA</button>
+          <button id="resetDispense" class="btn">RESET</button>
+        </div>
+        <div class="process-status">Status proses: <span id="processStatus">READY</span></div>
+      </div>
+    </section>
+
+    <section class="history card">
+      <h3>RIWAYAT PEMANTAUAN</h3>
+      <div class="table-wrap">
+        <table id="historyTable">
+          <thead>
+            <tr><th>Waktu</th><th>ADC</th><th>Tegangan</th><th>Kekeruhan</th><th>Status</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <small>ESP32 endpoints used: <code>/data</code>, <code>/dispense/status</code>, <code>/dispense/start</code>, <code>/dispense/stop</code>, <code>/dispense/reset</code></small>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
