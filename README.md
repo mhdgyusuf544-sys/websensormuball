@@ -1,92 +1,73 @@
 # WATER QUALITY MONITORING SYSTEM
 
-Ringkasan proyek: sebuah dashboard monitoring kualitas air berbasis HTML/CSS/JS yang terhubung dengan ESP32 dan sensor turbidity, plus kalkulator EM Mudball dan kontrol dispenser.
+Dashboard monitoring kualitas air berbasis HTML/CSS/JavaScript, dengan kalkulator EM Mudball, grafik, dan riwayat lokal.
 
-Files utama:
+## Mode perangkat
 
-- `index.html` — tampilan dashboard
-- `style.css` — styling modern, responsif
-- `script.js` — logika: pengambilan data ESP32, demo mode, Chart.js, history di `localStorage`, kalkulator dan kontrol dispenser
+Dashboard sekarang mendukung:
 
-Cara menjalankan (lokal):
+- **Arduino Uno melalui USB Serial (Web Serial API)** untuk membaca ADC sensor turbidity.
+- **DEMO MODE** untuk menguji tampilan tanpa perangkat.
+- Endpoint ESP32 lama untuk data sensor dan kontrol dispenser masih tersedia di kode; kontrol dispenser fisik tetap membutuhkan perangkat/firmware pengendali yang sesuai.
 
-1. Buka file `index.html` di browser (double-click atau `File > Open`).
-2. Default mode: mencoba mengambil data dari ESP32 pada `ESP32_IP` yang didefinisikan di `script.js`.
+## Cara menjalankan lokal dengan Arduino Uno
 
-Aktifkan DEMO MODE:
+1. Hubungkan sensor turbidity ke Arduino Uno:
+   - VCC sensor → 5V Arduino
+   - GND sensor → GND Arduino
+   - AO sensor → A0 Arduino
+   - DO tidak perlu dipakai untuk pembacaan analog.
+2. Upload sketch Arduino berikut dengan baud rate 9600:
 
-- Klik tombol `DEMO MODE` di kanan atas. Ketika aktif, tampilan menunjukkan `DEMO MODE` dan data disimulasikan (turbidity, ADC, voltage). Gunakan ini untuk menguji grafik dan dispenser tanpa ESP32.
+```cpp
+const int pinSensor = A0;
 
-Mengganti konfigurasi penting (di `script.js`):
+void setup() {
+  Serial.begin(9600);
+}
 
-- `const ESP32_IP = "192.168.1.20";` — ubah alamat IP ESP32.
-- `const MUD_BALL_PER_M2 = 5;` — jumlah EM Mudball per m².
-- `const UPDATE_INTERVAL = 1000;` — interval update (ms).
-- Ambang turbidity: `TURBIDITY_THRESHOLDS` (default diatur ke `jernih:10`, `agakKeruh:40`). Anda bisa mengubahnya di file atau dari console runtime:
-
-  - Buka DevTools (F12) dan jalankan:
-
-```js
-window.TURBIDITY_THRESHOLDS.jernih = 8;
-window.TURBIDITY_THRESHOLDS.agakKeruh = 35;
-```
-
-Format endpoint ESP32 yang diharapkan:
-
-- GET /data
-
-  Contoh response JSON:
-
-```json
-{
-  "adc": 2850,
-  "voltage": 2.31,
-  "turbidity": 24.6,
-  "status": "JERNIH"
+void loop() {
+  int adc = analogRead(pinSensor);
+  Serial.print("{\\"adc\\":");
+  Serial.print(adc);
+  Serial.println("}");
+  delay(1000);
 }
 ```
 
-- GET /dispense/status
-
-  Contoh response JSON:
-
-```json
-{
-  "target": 50,
-  "released": 25,
-  "remaining": 25,
-  "progress": 50,
-  "status": "DISPENSING"
-}
-```
-
-- POST /dispense/start
-- POST /dispense/stop
-- POST /dispense/reset
-
-Contoh cara menguji endpoint ESP32 dari komputer (curl):
+3. Tutup Serial Monitor Arduino IDE agar port serial bebas.
+4. Pastikan komputer menggunakan Google Chrome atau Microsoft Edge desktop yang mendukung Web Serial API.
+5. Jalankan server lokal di folder proyek. Contoh jika Python terpasang:
 
 ```bash
-curl http://192.168.1.20/data
-curl http://192.168.1.20/dispense/status
-curl -X POST http://192.168.1.20/dispense/start
+python -m http.server 8000
 ```
 
-Catatan validasi dan penggunaan:
+6. Buka `http://localhost:8000` di Chrome/Edge.
+7. Tekan **CONNECT ARDUINO UNO**, pilih port COM Arduino, lalu izinkan koneksi.
+8. Dashboard akan menampilkan ADC, estimasi tegangan berdasarkan referensi 5 V, grafik ADC, dan riwayat.
 
-- Input `Luas Area` harus > 0.
-- Jumlah EM Mudball = `Luas Area × MUD_BALL_PER_M2`.
-- Tombol `START DISPENSING` hanya aktif jika `Luas Area` valid dan target > 0.
-- Data history disimpan sementara di `localStorage` (maksimal entri disimpan sesuai `MAX_HISTORY` di `script.js`).
-- Grafik realtime menggunakan Chart.js via CDN; disimpan hingga `MAX_CHART_POINTS` data terakhir.
+> Catatan: nilai tegangan di dashboard adalah estimasi dari ADC dan asumsi referensi 5 V; hasil sebenarnya dapat berbeda. Dashboard tidak mengubah ADC menjadi NTU karena sensor perlu dikalibrasi terlebih dahulu. Untuk menghindari kerusakan, pastikan koneksi analog sesuai dengan rentang input board yang dipakai.
 
-Menghubungkan ke ESP32 (contoh):
+## Demo mode
 
-1. Pastikan ESP32 dan komputer berada di jaringan Wi‑Fi yang sama.
-2. Sesuaikan `ESP32_IP` di `script.js` dengan IP yang digunakan ESP32.
-3. Pastikan ESP32 melayani endpoint JSON seperti contoh di atas.
+Klik **DEMO MODE** untuk melihat data simulasi. Matikan DEMO MODE sebelum menghubungkan Arduino.
 
-Jika Anda ingin, saya bisa membantu:
+## Kalkulator EM Mudball
 
-- Menyediakan contoh sketch ESP32 (Arduino/PlatformIO) yang menyajikan endpoint `/data` dan `/dispense/*` dengan format JSON sesuai contoh.
-- Menambahkan UI untuk mengubah ambang turbidity dari dashboard.
+- `MUD_BALL_PER_M2 = 5` — jumlah EM Mudball per m².
+- Jumlah EM Mudball = luas area × 5.
+- Riwayat disimpan di `localStorage` browser.
+- Grafik mempertahankan 50 titik data terakhir.
+
+## Mode ESP32
+
+Untuk firmware ESP32 lama, `script.js` masih memiliki konfigurasi `ESP32_IP` dan endpoint berikut:
+
+- GET `/data`
+- GET `/dispense/status`
+- POST `/dispense/start`
+- POST `/dispense/stop`
+- POST `/dispense/reset`
+
+Sesuaikan IP dan format JSON dengan firmware ESP32 yang digunakan. Jika menggunakan Arduino Uno, pilih tombol **CONNECT ARDUINO UNO** untuk membaca sensor melalui USB.
