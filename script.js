@@ -24,9 +24,16 @@ let connected = false;
 let fetchTimer = null;
 let dispenserPoll = null;
 
+// Arduino Uno via Web Serial (Chrome/Edge desktop)
+let arduinoMode = false;
+let serialPort = null;
+let serialReader = null;
+let serialBuffer = '';
+
 // DOM
 const espStatusEl = document.getElementById('espStatus');
 const demoToggle = document.getElementById('demoToggle');
+const connectArduinoBtn = document.getElementById('connectArduino');
 const turbidityValueEl = document.getElementById('turbidityValue');
 const adcValueEl = document.getElementById('adcValue');
 const voltageValueEl = document.getElementById('voltageValue');
@@ -91,6 +98,11 @@ function setESPStatus(isConnected, mode){
     espStatusEl.className = 'status connected';
     return;
   }
+  if(arduinoMode){
+    espStatusEl.textContent = isConnected ? '● ARDUINO UNO CONNECTED' : '● ARDUINO UNO DISCONNECTED';
+    espStatusEl.className = isConnected ? 'status connected' : 'status disconnected';
+    return;
+  }
   if(isConnected){ espStatusEl.textContent = '● ESP32 CONNECTED'; espStatusEl.className='status connected'; }
   else{ espStatusEl.textContent = '● ESP32 DISCONNECTED'; espStatusEl.className='status disconnected'; }
 }
@@ -131,12 +143,15 @@ areaInput.addEventListener('input',()=>{ computeMudballs(); });
 let dispenserState = {target:0,released:0,remaining:0,progress:0,status:'READY'};
 
 function updateDispenserUI(){
+  const arduinoOnly = arduinoMode && !demoMode;
   dispTargetEl.textContent = dispenserState.target;
   dispReleasedEl.textContent = dispenserState.released;
   dispRemainingEl.textContent = dispenserState.remaining;
   dispProgressEl.textContent = dispenserState.progress + '%';
   processStatusEl.textContent = dispenserState.status;
-  startDispenseBtn.disabled = (dispenserState.target<=0) || (areaInput.value===''|| areaInput.value==='0');
+  startDispenseBtn.disabled = arduinoOnly || (dispenserState.target<=0) || (areaInput.value===''|| areaInput.value==='0');
+  stopDispenseBtn.disabled = arduinoOnly;
+  resetDispenseBtn.disabled = arduinoOnly;
 }
 
 function updateDispenserStateFromStatus(){
@@ -212,6 +227,7 @@ function simulateStep(){
 
 async function fetchESP32Data(){
   if(demoMode){ setESPStatus(true,'DEMO'); const d = simulateStep(); handleData(d); return; }
+  if(arduinoMode) return;
   try{
     const res = await fetch(`http://${ESP32_IP}/data`,{cache:'no-store'});
     if(!res.ok) throw new Error('Bad response');
@@ -238,7 +254,7 @@ async function fetchDispenserStatus(){
 
 function handleData(data){
   const adc = (data.adc!=null)?data.adc:NaN;
-  const voltage = (data.voltage!=null)?(+(+data.voltage).toFixed(2)):((adc)?+( (adc/4095*3.3).toFixed(2) ):'--');
+  const voltage = (data.voltage!=null)?(+(+data.voltage).toFixed(2)):(arduinoMode ? +((adc/1023*5).toFixed(2)) : ((adc)?+( (adc/4095*3.3).toFixed(2) ):'--'));
   const turbidity = (data.turbidity!=null)?(+(+data.turbidity).toFixed(1)):(null);
   const status = data.status || determineWaterStatus(turbidity);
 
@@ -253,7 +269,14 @@ function handleData(data){
   const timeLabel = nowTime();
   if(chartData.labels.length >= MAX_CHART_POINTS){ chartData.labels.shift(); chartData.datasets[0].data.shift(); }
   chartData.labels.push(timeLabel);
-  chartData.datasets[0].data.push(turbidity==null?0:turbidity);
+  chartData.datasets[0].data.push(arduinoMode ? (isNaN(adc) ? null : adc) : (turbidity==null?0:turbidity));
+  if(arduinoMode){
+    chartData.datasets[0].label = 'ADC Sensor (0–1023)';
+    turbidityChart.options.scales.y.title.text = 'ADC';
+  } else {
+    chartData.datasets[0].label = 'Turbidity (NTU)';
+    turbidityChart.options.scales.y.title.text = 'NTU';
+  }
   turbidityChart.update();
 
   // history
@@ -264,7 +287,7 @@ function handleData(data){
 function startMainLoop(){
   if(fetchTimer) clearInterval(fetchTimer);
   fetchESP32Data();
-  fetchTimer = setInterval(() => { fetchESP32Data(); if(!demoMode) fetchDispenserStatus(); }, UPDATE_INTERVAL);
+  fetchTimer = setInterval(() => { fetchESP32Data(); if(!demoMode && !arduinoMode) fetchDispenserStatus(); }, UPDATE_INTERVAL);
 }
 
 // Demo toggle
@@ -274,6 +297,92 @@ demoToggle.addEventListener('click',()=>{
   if(demoMode){ setESPStatus(true,'DEMO'); }
   startMainLoop();
 });
+
+
+// Arduino Uno connection via Web Serial API.
+// Arduino sketch should print one JSON line per second, e.g. {"adc":975}
+async function connectArduino(){
+  if(serialPort){
+    try {
+      if(serialReader){ await serialReader.cancel(); serialReader.releaseLock(); serialReader = null; }
+      await serialPort.close();
+    } catch(e) { console.warn('Error closing serial port', e); }
+    serialPort = null;
+    arduinoMode = false;
+    connectArduinoBtn.textContent = 'CONNECT ARDUINO UNO';
+    setESPStatus(false);
+    startMainLoop();
+    updateDispenserUI();
+    return;
+  }
+
+  if(!('serial' in navigator)){
+    alert('Web Serial tidak didukung browser ini. Gunakan Chrome atau Edge desktop dan buka web melalui localhost.');
+    return;
+  }
+
+  try {
+    serialPort = await navigator.serial.requestPort();
+    await serialPort.open({ baudRate: 9600 });
+    arduinoMode = true;
+    demoMode = false;
+    demoToggle.textContent = 'DEMO MODE';
+    connectArduinoBtn.textContent = 'DISCONNECT ARDUINO';
+    setESPStatus(true);
+    chartData.labels.length = 0;
+    chartData.datasets[0].data.length = 0;
+    chartData.datasets[0].label = 'ADC Sensor (0–1023)';
+    turbidityChart.options.scales.y.title.text = 'ADC';
+    turbidityChart.update();
+    updateDispenserUI();
+    startMainLoop();
+
+    const decoder = new TextDecoderStream();
+    const closed = serialPort.readable.pipeTo(decoder.writable).catch(() => {});
+    serialReader = decoder.readable.getReader();
+    serialBuffer = '';
+
+    while (true) {
+      const { value, done } = await serialReader.read();
+      if (done) break;
+      serialBuffer += value;
+      const lines = serialBuffer.split(/\\r?\\n/);
+      serialBuffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const text = line.trim();
+        if (!text) continue;
+        try {
+          const parsed = text.startsWith('{') ? JSON.parse(text) : { adc: Number(text) };
+          const adc = Number(parsed.adc);
+          if (!Number.isFinite(adc) || adc < 0 || adc > 1023) continue;
+          setESPStatus(true);
+          handleData({
+            adc: Math.round(adc),
+            voltage: +(adc * 5 / 1023).toFixed(2),
+            turbidity: null,
+            status: 'UNKNOWN'
+          });
+        } catch(e) {
+          console.warn('Baris serial tidak valid:', text);
+        }
+      }
+    }
+    await closed;
+  } catch(error) {
+    console.error('Arduino serial error:', error);
+    if(error.name !== 'NotFoundError') alert('Gagal membaca Arduino. Pastikan Serial Monitor ditutup dan baud rate 9600.');
+    if(serialReader){ try { serialReader.releaseLock(); } catch(e) {} serialReader = null; }
+    if(serialPort){ try { await serialPort.close(); } catch(e) {} serialPort = null; }
+    arduinoMode = false;
+    connectArduinoBtn.textContent = 'CONNECT ARDUINO UNO';
+    setESPStatus(false);
+    updateDispenserUI();
+    startMainLoop();
+  }
+}
+
+connectArduinoBtn.addEventListener('click', connectArduino);
 
 // Init
 (function init(){
