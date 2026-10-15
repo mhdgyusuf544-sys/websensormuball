@@ -14,8 +14,9 @@
       <p class="subtitle">Pemantauan kekeruhan air dan distribusi EM Mudball secara real-time</p>
     </div>
     <div class="header-right">
+      <button id="connectArduino" class="btn">CONNECT ARDUINO UNO</button>
       <button id="demoToggle" class="btn">DEMO MODE</button>
-      <div id="espStatus" class="status disconnected">● ESP32 DISCONNECTED</div>
+      <div id="espStatus" class="status disconnected">● DEVICE DISCONNECTED</div>
     </div>
   </header>
 
@@ -87,7 +88,7 @@
   </main>
 
   <footer class="footer">
-    <small>ESP32 endpoints used: <code>/data</code>, <code>/dispense/status</code>, <code>/dispense/start</code>, <code>/dispense/stop</code>, <code>/dispense/reset</code></small>
+    <small>Arduino Uno: USB Serial 9600 baud. Nilai NTU belum ditampilkan sampai sensor dikalibrasi. Kontrol dispenser fisik masih memerlukan perangkat pengendali terpisah.</small>
   </footer>
 
   <script src="script.js"></script>
