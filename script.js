@@ -6,9 +6,20 @@ const UPDATE_INTERVAL = 1000; // ms
 // Turbidity thresholds (change after calibration)
 // Do not treat these as final — adjust per calibration
 // Default values adjusted for easier tuning; change as needed.
+// Kalibrasi awal berdasarkan pengukuran pengguna.
+// ADC 979 = air bersih (baseline 0 NTU relatif), ADC 957 = sampel keruh (100 NTU relatif).
+// PENTING: 100 NTU adalah rentang relatif sementara, bukan NTU laboratorium terverifikasi.
+const SENSOR_CALIBRATION = {
+  cleanAdc: 979,
+  cleanVoltage: 4.78,
+  muddyAdc: 957,
+  muddyVoltage: 4.60,
+  cleanNtu: 0,
+  muddyNtu: 100
+};
 const TURBIDITY_THRESHOLDS = {
-  jernih: 10,      // <= 10 NTU -> JERNIH
-  agakKeruh: 25    // >10 and <=25 -> AGAK KERUH ; >25 -> KERUH
+  jernih: 10,
+  agakKeruh: 25
 };
 // Expose thresholds at runtime for quick adjustment in browser console:
 // e.g. window.TURBIDITY_THRESHOLDS.jernih = 8
@@ -270,11 +281,25 @@ async function fetchDispenserStatus(){
   }catch(e){ console.warn('dispense status fetch failed',e); }
 }
 
+function estimateFromAdc(adc, cleanAdc, cleanValue, muddyAdc, muddyValue){
+  if (!Number.isFinite(adc)) return null;
+  const denominator = cleanAdc - muddyAdc;
+  if (denominator === 0) return cleanValue;
+  const ratio = (cleanAdc - adc) / denominator;
+  return cleanValue + ratio * (muddyValue - cleanValue);
+}
+
 function handleData(data){
-  const adc = (data.adc!=null)?data.adc:NaN;
-  const voltage = (data.voltage!=null)?(+(+data.voltage).toFixed(2)):(arduinoMode ? +((adc/1023*5).toFixed(2)) : ((adc)?+( (adc/4095*3.3).toFixed(2) ):'--'));
-  const turbidity = (data.turbidity!=null)?(+(+data.turbidity).toFixed(1)):(null);
-  const status = data.status || determineWaterStatus(turbidity);
+  const adc = (data.adc!=null) ? Number(data.adc) : NaN;
+  const measuredVoltage = (arduinoMode && Number.isFinite(adc))
+    ? estimateFromAdc(adc, SENSOR_CALIBRATION.cleanAdc, SENSOR_CALIBRATION.cleanVoltage, SENSOR_CALIBRATION.muddyAdc, SENSOR_CALIBRATION.muddyVoltage)
+    : (data.voltage!=null ? Number(data.voltage) : (Number.isFinite(adc) ? (arduinoMode ? adc/1023*5 : adc/4095*3.3) : NaN));
+  const voltage = Number.isFinite(measuredVoltage) ? +measuredVoltage.toFixed(2) : NaN;
+  const measuredTurbidity = data.turbidity!=null
+    ? Number(data.turbidity)
+    : (arduinoMode ? estimateFromAdc(adc, SENSOR_CALIBRATION.cleanAdc, SENSOR_CALIBRATION.cleanNtu, SENSOR_CALIBRATION.muddyAdc, SENSOR_CALIBRATION.muddyNtu) : null);
+  const turbidity = Number.isFinite(measuredTurbidity) ? +Math.max(0, measuredTurbidity).toFixed(1) : null;
+  const status = data.status && data.status !== 'UNKNOWN' ? data.status : determineWaterStatus(turbidity);
 
   adcValueEl.textContent = isNaN(adc)?'--':adc;
   voltageValueEl.textContent = isNaN(voltage)?'--':voltage;
